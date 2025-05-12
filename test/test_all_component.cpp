@@ -129,41 +129,41 @@ void test_pin_encryption(void) {
   char encryptedPin[4];                   
   char decryptedPin[4];                   
 
-  // Set the pin to the test value
+  
   memcpy(pin, testPin, 4);
 
-  // Simulate encryption (same as savePinToEEPROM but without EEPROM write)
-  const uint8_t ENCRYPTION_KEY = 0x5A; // Use the known key
+  
+  const uint8_t ENCRYPTION_KEY = 0x5A; 
   memcpy(encryptedPin, testPin, 4);
   for (int i = 0; i < 4; i++) {
     encryptedPin[i] ^= ENCRYPTION_KEY;
     Serial.print("Encrypted["); Serial.print(i); Serial.print("]="); Serial.println(encryptedPin[i], DEC);
   }
 
-  // Simulate EEPROM write and read (just for consistency, but we'll use encryptedPin directly)
+  
   for (int i = 0; i < 4; i++) {
     EEPROM_write(i, encryptedPin[i]);
   }
   EEPROM_commit();
 
-  // Read from "EEPROM" (simulated)
+  
   for (int i = 0; i < 4; i++) {
-    decryptedPin[i] = encryptedPin[i]; // Use encryptedPin directly
+    decryptedPin[i] = encryptedPin[i]; 
     Serial.print("EEPROM["); Serial.print(i); Serial.print("]="); Serial.println(decryptedPin[i], DEC);
   }
 
-  // Simulate decryption
+  
   for (int i = 0; i < 4; i++) {
     decryptedPin[i] ^= ENCRYPTION_KEY;
     Serial.print("Decrypted["); Serial.print(i); Serial.print("]="); Serial.println(decryptedPin[i], DEC);
   }
 
-  // Verify the decryption matches the original
+
   for (int i = 0; i < 4; i++) {
     TEST_ASSERT_EQUAL_MESSAGE(testPin[i], decryptedPin[i], "Decrypted pin does not match original");
   }
 
-  // Clear EEPROM for next test
+  
   for (int i = 0; i < 4; i++) {
     EEPROM_write(i, 0); 
   }

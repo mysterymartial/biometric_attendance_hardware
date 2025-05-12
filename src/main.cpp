@@ -1,17 +1,15 @@
 #include "hardware_init.h"
 
-#include "hardware_init.h"
-
 const int EEPROM_SIZE = 4;
 bool pinSet = false;
 char input[4] = {'\0'};
 int inputIndex = 0;
 unsigned long idDisplayStartTime = 0;
-const unsigned long idDisplayDuration = 120000; // 2 minutes in milliseconds
+const unsigned long idDisplayDuration = 120000; 
 bool idDisplayActive = false;
 String currentFingerprintId = "";
 unsigned long lastFingerprintReadTime = 0;
-const unsigned long fingerprintCooldown = 5000; // 5 seconds cooldown between reads
+const unsigned long fingerprintCooldown = 5000; 
 
 
 void handleMenu();
@@ -69,13 +67,12 @@ char displayMainMenu() {
   while (choice == '\0') {
     choice = getKey();
     
-    // If we got a key, validate it
+    
     if (choice != '\0') {
       Serial.print("Menu key pressed: '");
       Serial.print(choice);
       Serial.println("'");
       
-      // Check if it's one of our valid options using direct character comparison
       if (choice == '1') {
         Serial.println("Valid choice: 1 (Registration)");
       } else if (choice == '2') {
@@ -85,7 +82,6 @@ char displayMainMenu() {
       } else if (choice == '7') {
         Serial.println("Valid choice: 7 (Home)");
       } else {
-        // Invalid choice
         Serial.print("Invalid menu choice: '");
         Serial.print(choice);
         Serial.println("'");
@@ -95,20 +91,18 @@ char displayMainMenu() {
         delay(1000);
         lcd.setCursor(0, 1);
         lcd.print("7:Home            ");
-        choice = '\0'; // Reset to continue loop
+        choice = '\0'; 
       }
     }
     
-    // Timeout after 30 seconds of inactivity
     if (millis() - menuStartTime > 30000) {
       Serial.println("Menu timeout - returning to main screen");
-      return '7'; // Return home on timeout
+      return '7'; 
     }
     
-    delay(50); // Small delay to prevent CPU hogging
+    delay(50); 
   }
   
-  // Debug output
   Serial.print("Final menu choice selected: '");
   Serial.print(choice);
   Serial.println("'");
@@ -120,41 +114,38 @@ void waitForBackKey() {
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Press 7 to go back");
-  // Changed from 4 to 7
   char backKey = '\0';
   unsigned long startTime = millis();
   
-  while (backKey != '7') {  // Changed from 4 to 7
+  while (backKey != '7') {  
     backKey = getKey();
     
-    // If a key was pressed but it's not '7', show message
     if (backKey != '\0') {
       Serial.print("Back key pressed: ");
       Serial.println(backKey);
       
-      if (backKey != '7') {  // Changed from 4 to 7
+      if (backKey != '7') {  
         lcd.setCursor(0, 1);
-        lcd.print("Invalid! Press 7");  // Changed from 4 to 7
+        lcd.print("Invalid! Press 7");  
         delay(1000);
         lcd.setCursor(0, 1);
         lcd.print("                ");
       }
     }
     
-    // Timeout after 30 seconds
+    
     if (millis() - startTime > 30000) {
       Serial.println("Back key timeout - returning automatically");
       break;
     }
     
-    delay(50); // Small delay to prevent CPU hogging
+    delay(50); 
   }
 }
 
 bool isTimeAllowedForAttendance() {
   DateTime now = rtc.now();
   
-  // Debug output
   Serial.println("Checking if attendance is allowed at current time:");
   Serial.print("Current date/time: ");
   Serial.print(now.year());
@@ -176,22 +167,19 @@ void handleMenu() {
   char choice = displayMainMenu();
   String fpId = "";
   
-  // Debug the initial choice
+  
   Serial.print("Initial menu choice: '");
   Serial.print(choice);
   Serial.println("'");
   
   while (choice != '7') {
-    // More debug output at the start of each loop
     Serial.print("Handling menu choice: '");
     Serial.print(choice);
     Serial.println("'");
     
-    // Use if-else instead of switch for more reliable character comparison
     if (choice == '1') {
       Serial.println("Selected Registration (Option 1)");
-      
-      // Registration - doesn't require connectivity
+    
       if (!pinSet) {
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -202,20 +190,18 @@ void handleMenu() {
         while (newIndex < 4) {
           char key = getKey();
           if (key != '\0') {
-            // Only accept digits
             if (isdigit(key)) {
               newPin[newIndex++] = key;
               lcd.setCursor(12 + newIndex - 1, 0);
               lcd.print("*");
             } else {
-              // Show error for non-digit keys
               lcd.setCursor(0, 1);
               lcd.print("Use digits only!");
               delay(1000);
               lcd.setCursor(0, 1);
               lcd.print("                ");
             }
-            delay(200); // Add delay to prevent double reads
+            delay(200); 
           }
         }
         
@@ -252,40 +238,34 @@ void handleMenu() {
       lcd.setCursor(0, 0);
       lcd.print("Place Finger");
       
-      // Enable auto-enrollment for registration
       fpId = getFingerprintString(true);
       
       if (fpId.length() > 0) {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("Finger ID: ");
-        lcd.print(fpId.substring(4)); // Show just the ID number
-        
-        // Check if this was a new enrollment
+        lcd.print("FPID" + fpId.substring(4)); 
+      
         if (fpId.startsWith("FPID") && fpId.substring(4).toInt() > 0) {
           lcd.setCursor(0, 1);
           lcd.print("7:Exit/New Finger");
         }
-        
-        // Start the timer for 2-minute display
+      
         unsigned long startTime = millis();
         bool exitEarly = false;
         
-        // Loop for 2 minutes or until key 7 is pressed or new finger detected
         while (millis() - startTime < 120000 && !exitEarly) {
-          // Check for key press
           char key = getKey();
           if (key == '7') {
             exitEarly = true;
           }
           
-          // Check if a finger is on the sensor - using the function instead of direct access
           uint8_t p = getFingerprintID();
           if (p == FINGERPRINT_OK) {
             exitEarly = true;
           }
           
-          delay(50); // Small delay to prevent CPU hogging
+          delay(50); 
         }
       } else {
         lcd.clear();
@@ -299,8 +279,6 @@ void handleMenu() {
     }
     else if (choice == '2') {
       Serial.println("Selected Attendance (Option 2)");
-      
-      // Attendance - requires connectivity and time check
       if (!isTimeAllowedForAttendance()) {
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -313,7 +291,6 @@ void handleMenu() {
         continue;
       }
       
-      // Try to reconnect if needed for attendance marking
       if (!mqttConnected) {
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -343,38 +320,31 @@ void handleMenu() {
       lcd.setCursor(0, 1);
       lcd.print("for Attendance");
       
-      // Don't auto-enroll for attendance
       fpId = getFingerprintString(false);
       
       if (fpId.length() > 0) {
-        // Use the publishAttendanceData function from hardware_init.cpp
         publishAttendanceData(fpId.c_str(), "present");
         
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("ID: " + fpId.substring(4)); // Show just the ID number
+        lcd.print("ID: " + fpId.substring(4)); 
         lcd.setCursor(0, 1);
         lcd.print("7:Exit/New Finger");
-        
-        // Start the timer for 2-minute display
         unsigned long startTime = millis();
         bool exitEarly = false;
-        
-        // Loop for 2 minutes or until key 7 is pressed or new finger detected
+    
         while (millis() - startTime < 120000 && !exitEarly) {
-          // Check for key press
           char key = getKey();
           if (key == '7') {
             exitEarly = true;
           }
           
-          // Check if a finger is on the sensor - using the function instead of direct access
           uint8_t p = getFingerprintID();
           if (p == FINGERPRINT_OK) {
             exitEarly = true;
           }
           
-          delay(50); // Small delay to prevent CPU hogging
+          delay(50);
         }
       } else {
         lcd.clear();
@@ -389,7 +359,6 @@ void handleMenu() {
     else if (choice == '3') {
       Serial.println("Selected Leave (Option 3)");
       
-      // Leave - requires connectivity
       if (!mqttConnected) {
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -418,39 +387,34 @@ void handleMenu() {
       lcd.print("Place Finger");
       lcd.setCursor(0, 1);
       lcd.print("for Leave");
-      
-      // Don't auto-enroll for leave
+
       fpId = getFingerprintString(false);
       
       if (fpId.length() > 0) {
-        // Use the publishAttendanceData function with "leave" status
         publishAttendanceData(fpId.c_str(), "leave");
         
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("ID: " + fpId.substring(4)); // Show just the ID number
+        lcd.print("ID: " "FPID" + fpId.substring(4)); 
         lcd.setCursor(0, 1);
         lcd.print("7:Exit/New Finger");
         
-        // Start the timer for 2-minute display
         unsigned long startTime = millis();
         bool exitEarly = false;
         
-        // Loop for 2 minutes or until key 7 is pressed or new finger detected
         while (millis() - startTime < 120000 && !exitEarly) {
-          // Check for key press
+          
           char key = getKey();
           if (key == '7') {
             exitEarly = true;
           }
           
-          // Check if a finger is on the sensor - using the function instead of direct access
           uint8_t p = getFingerprintID();
           if (p == FINGERPRINT_OK) {
             exitEarly = true;
           }
           
-          delay(50); // Small delay to prevent CPU hogging
+          delay(50); 
         }
       } else {
         lcd.clear();
@@ -463,7 +427,6 @@ void handleMenu() {
       }
     }
     else if (choice != '7') {
-      // Invalid choice (not 1, 2, 3, or 7)
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Invalid choice!");
@@ -472,10 +435,8 @@ void handleMenu() {
       delay(2000);
     }
     
-    // Get the next menu choice
     choice = displayMainMenu();
     
-    // Debug the new choice
     Serial.print("New menu choice: '");
     Serial.print(choice);
     Serial.println("'");

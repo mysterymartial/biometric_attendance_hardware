@@ -35,7 +35,7 @@ extern NTPClient timeClient;
 extern char keys[4][4];  
 extern char pin[4];     
 
-// Connection status tracking
+
 extern bool wifiConnected;
 extern bool mqttConnected;
 extern int connectionAttempts;
@@ -53,7 +53,6 @@ void savePinToEEPROM();
 void decryptPin(char* pinData); 
 void publishAttendanceData(const char* id, const char* status); 
 
-// New functions for auto-enrollment and improved connectivity
 uint8_t autoEnrollFingerprint();
 uint8_t getFingerprintID();
 String getFingerprintString(bool tryAutoEnroll = false);
@@ -61,7 +60,6 @@ bool reconnectWiFiIfNeeded();
 bool reconnectMQTTIfNeeded();
 
 inline bool isTimeAllowedForAttendanceWithTime(DateTime now) {
-  // Debug output
   Serial.print("Current time: ");
   Serial.print(now.year());
   Serial.print("-");
@@ -77,17 +75,14 @@ inline bool isTimeAllowedForAttendanceWithTime(DateTime now) {
   Serial.print(" Day of week: ");
   Serial.println(now.dayOfTheWeek());
   
-  // Check day of week (1 = Monday, 7 = Sunday in PCF8563)
   uint8_t dayOfWeek = now.dayOfTheWeek();
-  if (dayOfWeek == 0) dayOfWeek = 7; // Convert 0 to 7 for Sunday if needed
+  if (dayOfWeek == 0) dayOfWeek = 7; 
   
-  // Only allow Monday (1) through Friday (5)
   if (dayOfWeek > 5) {
     Serial.println("Weekend - attendance not allowed");
     return false;
   }
   
-  // Check time (7 AM to 5 PM)
   int hour = now.hour();
   if (hour < 7 || hour >= 17) {
     Serial.println("Outside work hours - attendance not allowed");

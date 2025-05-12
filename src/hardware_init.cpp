@@ -18,7 +18,7 @@ char keys[4][4] = {
 
 char pin[4] = {'0', '0', '0', '0'}; 
 
-// Connection status tracking
+
 bool wifiConnected = false;
 bool mqttConnected = false;
 int connectionAttempts = 0;
@@ -33,7 +33,6 @@ void initHardware() {
   
   initLCD();
   
-  // Try to connect but continue after 3 attempts
   connectionAttempts = 0;
   initWiFiAndMQTT();
   
@@ -116,10 +115,8 @@ void initFingerprint() {
     while (1);
   }
   
-  // Set higher security level (1-5, where 5 is highest security)
   finger.setSecurityLevel(3);
   
-  // Get sensor parameters for debugging
   uint8_t params = finger.getParameters();
   Serial.print("Fingerprint sensor status: ");
   Serial.print("Capacity: "); Serial.print(finger.capacity);
@@ -136,13 +133,9 @@ void initFingerprint() {
 bool checkDuplicateFingerprint() {
   Serial.println("Checking for duplicate fingerprint...");
   
-  // The current fingerprint is already in buffer 1 (from image2Tz(1))
-  // We need to search for it in the database
-  
   uint8_t p = finger.fingerFastSearch();
   
   if (p == FINGERPRINT_OK) {
-    // A match was found - this is a duplicate
     Serial.print("Found duplicate fingerprint at ID #"); 
     Serial.println(finger.fingerID);
     Serial.print("With confidence of "); 
@@ -157,15 +150,13 @@ bool checkDuplicateFingerprint() {
     return true;
   } 
   else if (p == FINGERPRINT_NOTFOUND) {
-    // No duplicate found
     Serial.println("No duplicate fingerprint found");
     return false;
   }
   else {
-    // Some error occurred
     Serial.print("Error in duplicate check: "); 
     Serial.println(p);
-    return false; // Continue with enrollment despite error
+    return false; 
   }
 }
 
@@ -311,17 +302,14 @@ char getKey() {
 }
 
 void initWiFiAndMQTT() {
-  // Ensure WiFi is disconnected and in station mode
   WiFi.disconnect(true);
   delay(1000);
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false); // Disable sleep for better reliability
+  WiFi.setSleep(false); 
   
-  // Print WiFi credentials for debugging
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(WIFI_SSID);
   
-  // Try to connect to WiFi with limited attempts
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -330,7 +318,7 @@ void initWiFiAndMQTT() {
   lcd.print("WiFi...");
   
   unsigned long startTime = millis();
-  const unsigned long timeout = 10000; // 10-second timeout per attempt
+  const unsigned long timeout = 10000; 
   
   while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
     delay(500);
@@ -351,7 +339,6 @@ void initWiFiAndMQTT() {
     lcd.print("IP: " + WiFi.localIP().toString().substring(0, 12));
     delay(1000);
     
-    // Try MQTT connection
     wifiClient.setInsecure();
     client.setServer(MQTT_BROKER, MQTT_PORT);
     if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
@@ -382,7 +369,6 @@ void initWiFiAndMQTT() {
     lcd.print("Attempt " + String(connectionAttempts) + "/3");
     delay(1000);
     
-    // Try again if we haven't reached max attempts
     if (connectionAttempts < 3) {
       Serial.println("Retrying WiFi connection...");
       initWiFiAndMQTT();
@@ -416,7 +402,7 @@ bool reconnectWiFiIfNeeded() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   
   unsigned long startTime = millis();
-  const unsigned long timeout = 10000; // 10-second timeout
+  const unsigned long timeout = 10000; 
   
   while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
     delay(500);
@@ -507,7 +493,6 @@ void decryptPin(char* pinData) {
   }
 }
 
-// New function for auto-enrollment
 uint8_t autoEnrollFingerprint(uint8_t id) {
   uint8_t p = -1;
   Serial.println("Waiting for valid finger to enroll...");
@@ -517,7 +502,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
   lcd.setCursor(0, 1);
   lcd.print("to enroll...");
   
-  // Wait up to 15 seconds for a finger
   unsigned long startTime = millis();
   while (p != FINGERPRINT_OK && millis() - startTime < 15000) {
     p = finger.getImage();
@@ -526,7 +510,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
       Serial.println("Image taken");
       break;
     case FINGERPRINT_NOFINGER:
-      // Show progress dots on LCD
       if ((millis() - startTime) % 1000 < 100) {
         lcd.setCursor(15, 1);
         static int dots = 0;
@@ -547,7 +530,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
     }
   }
   
-  // If timeout occurred
   if (p != FINGERPRINT_OK) {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -558,7 +540,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
     return p;
   }
   
-  // Improve image quality check
   p = finger.image2Tz(1);
   switch (p) {
     case FINGERPRINT_OK:
@@ -607,7 +588,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
       return p;
   }
   
-  // Check for duplicate fingerprint before continuing
   if (checkDuplicateFingerprint()) {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -615,7 +595,7 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
     lcd.setCursor(0, 1);
     lcd.print("registered!");
     delay(2000);
-    return FINGERPRINT_ENROLLMISMATCH; // Use this code to indicate duplicate
+    return FINGERPRINT_ENROLLMISMATCH; 
   }
   
   lcd.clear();
@@ -637,7 +617,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
   lcd.print("finger again");
   Serial.println("Place same finger again");
   
-  // Wait up to 15 seconds for the same finger
   startTime = millis();
   while (p != FINGERPRINT_OK && millis() - startTime < 15000) {
     p = finger.getImage();
@@ -646,7 +625,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
       Serial.println("Image taken");
       break;
     case FINGERPRINT_NOFINGER:
-      // Show progress dots on LCD
       if ((millis() - startTime) % 1000 < 100) {
         lcd.setCursor(15, 1);
         static int dots = 0;
@@ -667,7 +645,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
     }
   }
   
-  // If timeout occurred
   if (p != FINGERPRINT_OK) {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -678,7 +655,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
     return p;
   }
   
-  // Improve image quality check for second scan
   p = finger.image2Tz(2);
   switch (p) {
     case FINGERPRINT_OK:
@@ -725,7 +701,6 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
       return p;
   }
   
-  // OK converted!
   Serial.print("Creating model for ID #");
   Serial.println(id);
   
@@ -758,8 +733,7 @@ uint8_t autoEnrollFingerprint(uint8_t id) {
     delay(2000);
     return p;
   }
-  
-  // Check model quality
+
   if (finger.confidence < 100) {
     lcd.clear();
     lcd.setCursor(0, 0);
@@ -842,7 +816,6 @@ uint8_t getFingerprintID() {
       return p;
   }
   
-  // Improve image quality check
   p = finger.image2Tz();
   switch (p) {
     case FINGERPRINT_OK:
@@ -865,13 +838,11 @@ uint8_t getFingerprintID() {
       return p;
   }
   
-  // OK converted!
   p = finger.fingerSearch();
     
   if (p == FINGERPRINT_OK) {
     Serial.println("Found a print match!");
     
-    // Add confidence threshold check to prevent false positives
     if (finger.confidence < 50) {
       Serial.print("Match found but confidence too low: ");
       Serial.println(finger.confidence);
@@ -895,7 +866,6 @@ uint8_t getFingerprintID() {
     return p;
   }
   
-  // found a match!
   Serial.print("Found ID #"); Serial.print(finger.fingerID);  
   Serial.print(" with confidence of "); Serial.println(finger.confidence);
   
@@ -926,10 +896,8 @@ void publishAttendanceData(const char* id, const char* status) {
     }
   }
   
-  // Get current time from RTC
   DateTime now = rtc.now();
   
-  // Format the timestamp
   char timeStr[20];
   char timeOnlyStr[9];
   
@@ -949,11 +917,9 @@ void publishAttendanceData(const char* id, const char* status) {
                   "\",\"status\":\"" + String(status) +
                   "\",\"topic\":\"" + MQTT_TOPIC + "\"}";
   
-  // Debug output
   Serial.print("Sending payload: ");
   Serial.println(payload);
   
-  // Publish to MQTT
   if (client.publish(MQTT_TOPIC, payload.c_str())) {
     Serial.println("Published attendance data successfully");
   } else {
@@ -998,7 +964,6 @@ void displayWelcomeScreen() {
 }
 
 String getFingerprintString(bool tryAutoEnroll) {
-  // Track attempts to prevent repeated failures
   int attempts = 0;
   const int MAX_ATTEMPTS = 3;
   
@@ -1007,21 +972,18 @@ String getFingerprintString(bool tryAutoEnroll) {
     
     if (p != FINGERPRINT_OK) {
       if (p == FINGERPRINT_NOFINGER) {
-        // Wait longer for a finger during registration
         if (tryAutoEnroll) {
           lcd.clear();
           lcd.setCursor(0, 0);
           lcd.print("Place finger");
           lcd.setCursor(0, 1);
           lcd.print("firmly on sensor");
-          
-          // Wait up to 10 seconds for a finger
+        
           unsigned long startTime = millis();
           while (millis() - startTime < 10000) {
             p = finger.getImage();
             if (p == FINGERPRINT_OK) break;
             
-            // Show progress dots on LCD
             if ((millis() - startTime) % 1000 < 100) {
               lcd.setCursor(15, 1);
               static int dots = 0;
@@ -1032,7 +994,6 @@ String getFingerprintString(bool tryAutoEnroll) {
             delay(100);
           }
           
-          // If still no finger, return empty
           if (p != FINGERPRINT_OK) {
             lcd.clear();
             lcd.setCursor(0, 0);
@@ -1043,7 +1004,7 @@ String getFingerprintString(bool tryAutoEnroll) {
             return "";
           }
         } else {
-          return ""; // No finger detected for attendance
+          return "";
         }
       } else {
         Serial.println("Error getting fingerprint image");
@@ -1057,11 +1018,10 @@ String getFingerprintString(bool tryAutoEnroll) {
           delay(2000);
           return "";
         }
-        continue; // Try again
+        continue; 
       }
     }
     
-    // Improve image quality check
     p = finger.image2Tz();
     if (p != FINGERPRINT_OK) {
       Serial.print("Error converting fingerprint image: ");
@@ -1083,12 +1043,11 @@ String getFingerprintString(bool tryAutoEnroll) {
         delay(2000);
         return "";
       }
-      continue; // Try again
+      continue; 
     }
     
     p = finger.fingerSearch();
     if (p == FINGERPRINT_OK) {
-      // Check confidence level for more reliable matching
       if (finger.confidence < 50) {
         Serial.print("Match found but confidence too low: ");
         Serial.println(finger.confidence);
@@ -1109,10 +1068,8 @@ String getFingerprintString(bool tryAutoEnroll) {
           delay(2000);
           return "";
         }
-        continue; // Try again
+        continue; 
       }
-      
-      // Found a match with good confidence - format as FPID followed by the ID number
       String fpId = "FPID" + String(finger.fingerID);
       Serial.print("Found fingerprint with ID: ");
       Serial.print(fpId);
@@ -1122,8 +1079,7 @@ String getFingerprintString(bool tryAutoEnroll) {
       return fpId;
     } else if (p == FINGERPRINT_NOTFOUND) {
       Serial.println("Fingerprint not found in database");
-      
-      // Try auto-enrollment if requested
+    
       if (tryAutoEnroll) {
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -1132,11 +1088,10 @@ String getFingerprintString(bool tryAutoEnroll) {
         lcd.print("Enrolling...");
         delay(1000);
         
-        // Find the next available ID
         uint8_t nextId = 1;
         while (finger.loadModel(nextId) == FINGERPRINT_OK) {
           nextId++;
-          if (nextId >= 128) { // Maximum capacity of most fingerprint sensors
+          if (nextId >= 128) { 
             lcd.clear();
             lcd.setCursor(0, 0);
             lcd.print("Database full!");
@@ -1145,13 +1100,12 @@ String getFingerprintString(bool tryAutoEnroll) {
           }
         }
         
-        // Proceed with auto-enrollment
         uint8_t result = autoEnrollFingerprint(nextId);
         if (result == FINGERPRINT_OK) {
           String newId = "FPID" + String(nextId);
           return newId;
         } else {
-          return ""; // Enrollment failed
+          return ""; 
         }
       }
       
@@ -1182,11 +1136,10 @@ String getFingerprintString(bool tryAutoEnroll) {
         delay(2000);
         return "";
       }
-      continue; // Try again
+      continue; 
     }
   }
   
-  // If we get here, we've had too many failed attempts
   return "";
 }
 
@@ -1214,7 +1167,7 @@ uint8_t deleteFingerprint(uint8_t id) {
   }
 }
 
-// Add a function to empty the entire database
+
 uint8_t emptyDatabase() {
   uint8_t p = finger.emptyDatabase();
   
