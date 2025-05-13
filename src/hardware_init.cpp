@@ -305,11 +305,12 @@ void initWiFiAndMQTT() {
   WiFi.disconnect(true);
   delay(1000);
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false); 
+  WiFi.setSleep(false);
   
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(WIFI_SSID);
   
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -318,13 +319,19 @@ void initWiFiAndMQTT() {
   lcd.print("WiFi...");
   
   unsigned long startTime = millis();
-  const unsigned long timeout = 10000; 
+  const unsigned long timeout = 20000; // Increased timeout to 20 seconds
+  int dotCount = 0;
   
   while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
     delay(500);
     Serial.print(".");
     lcd.setCursor(14, 1);
-    lcd.print(".");
+    dotCount = (dotCount + 1) % 4;
+    lcd.print("    "); // Clear dots
+    lcd.setCursor(14, 1);
+    for (int i = 0; i < dotCount; i++) {
+      lcd.print(".");
+    }
   }
   
   if (WiFi.status() == WL_CONNECTED) {
@@ -362,14 +369,42 @@ void initWiFiAndMQTT() {
     wifiConnected = false;
     connectionAttempts++;
     Serial.println("WiFi connection failed! Status: " + String(WiFi.status()));
+    Serial.println("Trying alternative connection method...");
+    
+    // Try alternative connection method
+    WiFi.disconnect(true);
+    delay(1000);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print("WiFi Failed!");
+    lcd.print("Retry WiFi...");
     lcd.setCursor(0, 1);
     lcd.print("Attempt " + String(connectionAttempts) + "/3");
-    delay(1000);
     
-    if (connectionAttempts < 3) {
+    startTime = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
+      delay(500);
+      Serial.print("*");
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiConnected = true;
+      Serial.println("Connected to WiFi (2nd attempt)");
+      Serial.print("IP Address: ");
+      Serial.println(WiFi.localIP());
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("WiFi Connected!");
+      delay(1000);
+      
+      // Try MQTT connection
+      wifiClient.setInsecure();
+      client.setServer(MQTT_BROKER, MQTT_PORT);
+      if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+        mqttConnected = true;
+      }
+    } else if (connectionAttempts < 3) {
       Serial.println("Retrying WiFi connection...");
       initWiFiAndMQTT();
     } else {
@@ -382,6 +417,113 @@ void initWiFiAndMQTT() {
       delay(2000);
     }
   }
+}
+void diagnosisWiFi() {
+  Serial.println("\n--- WiFi Diagnosis ---");
+  Serial.print("WiFi Status: ");
+  
+  switch(WiFi.status()) {
+    case WL_CONNECTED:
+      Serial.println("CONNECTED");
+      Serial.print("Connected to: ");
+      Serial.println(WiFi.SSID());
+      Serial.print("IP Address: ");
+      Serial.println(WiFi.localIP());
+      Serial.print("RSSI: ");
+      Serial.println(WiFi.RSSI());
+      break;
+    case WL_NO_SHIELD:
+      Serial.println("NO SHIELD");
+      break;
+    case WL_IDLE_STATUS:
+      Serial.println("IDLE");
+      break;
+    case WL_NO_SSID_AVAIL:
+      Serial.println("NO SSID AVAILABLE");
+      break;
+    case WL_SCAN_COMPLETED:
+      Serial.println("SCAN COMPLETED");
+      break;
+    case WL_CONNECT_FAILED:
+      Serial.println("CONNECTION FAILED");
+      break;
+    case WL_CONNECTION_LOST:
+      Serial.println("CONNECTION LOST");
+      break;
+    case WL_DISCONNECTED:
+      Serial.println("DISCONNECTED");
+      break;
+    default:
+      Serial.println("UNKNOWN");
+  }
+  
+  Serial.print("Attempting to scan networks...");
+  int numNetworks = WiFi.scanNetworks();
+  Serial.println("done");
+  
+  if (numNetworks == 0) {
+    Serial.println("No networks found");
+  } else {
+    Serial.print(numNetworks);
+    Serial.println(" networks found:");
+    for (int i = 0; i < numNetworks; ++i) {
+      // Print network details
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.print(WiFi.SSID(i));
+      Serial.print(" (");
+      Serial.print(WiFi.RSSI(i));
+      Serial.print(" dBm) ");
+      
+      // More detailed encryption type information
+      String encryptionType = "";
+      #ifdef ESP8266
+        switch(WiFi.encryptionType(i)) {
+          case ENC_TYPE_WEP: encryptionType = "WEP"; break;
+          case ENC_TYPE_TKIP: encryptionType = "WPA/TKIP"; break;
+          case ENC_TYPE_CCMP: encryptionType = "WPA2/CCMP"; break;
+          case ENC_TYPE_NONE: encryptionType = "Open"; break;
+          case ENC_TYPE_AUTO: encryptionType = "Auto"; break;
+          default: encryptionType = "Unknown"; break;
+        }
+      #else // For ESP32
+        if (WiFi.encryptionType(i) == WIFI_AUTH_OPEN)
+          encryptionType = "Open";
+        else if (WiFi.encryptionType(i) == WIFI_AUTH_WEP)
+          encryptionType = "WEP";
+        else if (WiFi.encryptionType(i) == WIFI_AUTH_WPA_PSK)
+          encryptionType = "WPA/PSK";
+        else if (WiFi.encryptionType(i) == WIFI_AUTH_WPA2_PSK)
+          encryptionType = "WPA2/PSK";
+        else if (WiFi.encryptionType(i) == WIFI_AUTH_WPA_WPA2_PSK)
+          encryptionType = "WPA/WPA2/PSK";
+        else
+          encryptionType = "Unknown";
+      #endif
+      
+      Serial.println(encryptionType);
+      delay(10);
+    }
+  }
+  
+  
+  bool mysteryFound = false;
+  for (int i = 0; i < numNetworks; i++) {
+    if (WiFi.SSID(i) == "Mystery") {
+      mysteryFound = true;
+      Serial.println("\nFound your 'Mystery' network:");
+      Serial.print("Signal strength: ");
+      Serial.print(WiFi.RSSI(i));
+      Serial.println(" dBm");
+      break;
+    }
+  }
+  
+  if (!mysteryFound) {
+    Serial.println("\n'Mystery' network not found in scan results!");
+  }
+  
+  Serial.println("------------------------");
 }
 
 bool reconnectWiFiIfNeeded() {

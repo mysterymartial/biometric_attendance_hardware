@@ -52,6 +52,7 @@ bool fetchCurrentTime(DateTime &dt);
 void savePinToEEPROM();  
 void decryptPin(char* pinData); 
 void publishAttendanceData(const char* id, const char* status); 
+void diagnosisWiFi();
 
 uint8_t autoEnrollFingerprint();
 uint8_t getFingerprintID();

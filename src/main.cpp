@@ -17,11 +17,30 @@ char displayMainMenu();
 void waitForBackKey();
 bool isTimeAllowedForAttendance();
 
+void resetPinTo1111() {
+  // Set the PIN to 1111
+  pin[0] = '1';
+  pin[1] = '1';
+  pin[2] = '1';
+  pin[3] = '1';
+
+  pinSet = true;
+  
+  // Save to EEPROM with encryption
+  savePinToEEPROM();
+  
+  // Confirm the PIN is set
+  
+  
+  // Print confirmation
+  Serial.println("PIN has been reset to 1111");
+}
 #ifndef UNIT_TEST
 // Exclude during unit tests
 void setup() {
   initHardware();
   
+  // Load PIN from EEPROM
   for (int i = 0; i < 4; i++) {
     pin[i] = EEPROM.read(i);
     decryptPin(&pin[i]);
@@ -41,6 +60,11 @@ void setup() {
 }
 
 void loop() {
+  if (!wifiConnected) {
+    diagnosisWiFi();
+  }
+  //static bool pinReset = false;
+  
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Press any key...");
@@ -53,6 +77,9 @@ void loop() {
   
   handleMenu();
 }
+
+
+
 #endif  // UNIT_TEST
 
 char displayMainMenu() {
@@ -179,14 +206,56 @@ void handleMenu() {
     
     if (choice == '1') {
       Serial.println("Selected Registration (Option 1)");
-    
-      if (!pinSet) {
+      
+      if (pinSet) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Enter PIN: ");
+        char enteredPin[4] = {'\0'};
+        int pinIndex = 0;
+        
+        while (pinIndex < 4) {
+          char key = getKey();
+          if (key != '\0') {
+            if (isdigit(key)) {
+              enteredPin[pinIndex++] = key;
+              lcd.setCursor(10 + pinIndex - 1, 0);
+              lcd.print("*");
+            } else {
+              lcd.setCursor(0, 1);
+              lcd.print("Use digits only!");
+              delay(1000);
+              lcd.setCursor(0, 1);
+              lcd.print("                ");
+            }
+            delay(200);
+          }
+        }
+        
+        bool pinCorrect = true;
+        for (int i = 0; i < 4; i++) {
+          if (enteredPin[i] != pin[i]) {
+            pinCorrect = false;
+            break;
+          }
+        }
+        
+        if (!pinCorrect) {
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Incorrect PIN!");
+          delay(2000);
+          waitForBackKey();
+          choice = displayMainMenu();
+          continue;
+        }
+      } else {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("Set New PIN: ");
         char newPin[4] = {'\0'};
         int newIndex = 0;
-        
+            
         while (newIndex < 4) {
           char key = getKey();
           if (key != '\0') {
@@ -201,10 +270,10 @@ void handleMenu() {
               lcd.setCursor(0, 1);
               lcd.print("                ");
             }
-            delay(200); 
-          }
+            delay(200);
+           }
         }
-        
+            
         bool validInput = true;
         for (int i = 0; i < 4; i++) {
           if (newPin[i] < '0' || newPin[i] > '9') {
@@ -212,7 +281,7 @@ void handleMenu() {
             break;
           }
         }
-        
+            
         if (validInput) {
           memcpy(pin, newPin, 4);
           savePinToEEPROM();
@@ -233,40 +302,40 @@ void handleMenu() {
           continue;
         }
       }
-      
+        
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Place Finger");
-      
+        
       fpId = getFingerprintString(true);
-      
+        
       if (fpId.length() > 0) {
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("Finger ID: ");
-        lcd.print("FPID" + fpId.substring(4)); 
-      
+        lcd.print("FPID" + fpId.substring(4));
+           
         if (fpId.startsWith("FPID") && fpId.substring(4).toInt() > 0) {
           lcd.setCursor(0, 1);
           lcd.print("7:Exit/New Finger");
         }
-      
+          
         unsigned long startTime = millis();
         bool exitEarly = false;
-        
+            
         while (millis() - startTime < 120000 && !exitEarly) {
           char key = getKey();
           if (key == '7') {
             exitEarly = true;
           }
-          
+                
           uint8_t p = getFingerprintID();
           if (p == FINGERPRINT_OK) {
             exitEarly = true;
           }
-          
-          delay(50); 
-        }
+                
+          delay(50);
+         }
       } else {
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -357,74 +426,86 @@ void handleMenu() {
       }
     }
     else if (choice == '3') {
-      Serial.println("Selected Leave (Option 3)");
-      
-      if (!mqttConnected) {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Connecting for");
-        lcd.setCursor(0, 1);
-        lcd.print("leave...");
-        delay(1000);
-        
-        reconnectMQTTIfNeeded();
-        
-        if (!mqttConnected) {
-          lcd.clear();
-          lcd.setCursor(0, 0);
-          lcd.print("No connection!");
-          lcd.setCursor(0, 1);
-          lcd.print("Try again later");
-          delay(2000);
-          waitForBackKey();
-          choice = displayMainMenu();
-          continue;
-        }
-      }
+      Serial.println("Selected Reset PIN (Option 3)");
       
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Place Finger");
-      lcd.setCursor(0, 1);
-      lcd.print("for Leave");
-
-      fpId = getFingerprintString(false);
+      lcd.print("Enter Old PIN:");
+      char oldPin[4] = {'\0'};
+      int oldIndex = 0;
       
-      if (fpId.length() > 0) {
-        publishAttendanceData(fpId.c_str(), "leave");
+      while (oldIndex < 4) {
+        char key = getKey();
+        if (key != '\0') {
+          if (isdigit(key)) {
+            oldPin[oldIndex++] = key;
+            lcd.setCursor(oldIndex + 11, 0);
+            lcd.print("*");
+          } else {
+            lcd.setCursor(0, 1);
+            lcd.print("Use digits only!");
+            delay(1000);
+            lcd.setCursor(0, 1);
+            lcd.print("                ");
+          }
+          delay(200);
+        }
+      }
+      
+      bool pinCorrect = true;
+      for (int i = 0; i < 4; i++) {
+        if (oldPin[i] != pin[i]) {
+          pinCorrect = false;
+          lcd.print("Incorrect PIN!");
+          lcd.setCursor(0, 1);
+          break;
+        }
+      }
+      
+      if (pinCorrect) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Enter New PIN:");
+        char newPin[4] = {'\0'};
+        int newIndex = 0;
+        
+        while (newIndex < 4) {
+          char key = getKey();
+          if (key != '\0') {
+            if (isdigit(key)) {
+              newPin[newIndex++] = key;
+              lcd.setCursor(newIndex + 11, 0);
+              lcd.print("*");
+            } else {
+              lcd.setCursor(0, 1);
+              lcd.print("Use digits only!");
+              delay(1000);
+              lcd.setCursor(0, 1);
+              lcd.print("                ");
+            }
+            delay(200);
+          }
+        }
+        
+      
+        memcpy(pin, newPin, 4);
+        savePinToEEPROM();
         
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("ID: " "FPID" + fpId.substring(4)); 
+        lcd.print("PIN Changed!");
         lcd.setCursor(0, 1);
-        lcd.print("7:Exit/New Finger");
-        
-        unsigned long startTime = millis();
-        bool exitEarly = false;
-        
-        while (millis() - startTime < 120000 && !exitEarly) {
-          
-          char key = getKey();
-          if (key == '7') {
-            exitEarly = true;
-          }
-          
-          uint8_t p = getFingerprintID();
-          if (p == FINGERPRINT_OK) {
-            exitEarly = true;
-          }
-          
-          delay(50); 
-        }
+        lcd.print("Successfully");
+        delay(2000);
       } else {
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("No Fingerprint");
+        lcd.print("Incorrect PIN!");
         lcd.setCursor(0, 1);
-        lcd.print("Detected!");
+        lcd.print("Try again");
         delay(2000);
-        waitForBackKey();
       }
+      waitForBackKey();
     }
     else if (choice != '7') {
       lcd.clear();
