@@ -18,7 +18,6 @@ void waitForBackKey();
 bool isTimeAllowedForAttendance();
 
 void resetPinTo1111() {
-  // Set the PIN to 1111
   pin[0] = '1';
   pin[1] = '1';
   pin[2] = '1';
@@ -26,13 +25,8 @@ void resetPinTo1111() {
 
   pinSet = true;
   
-  // Save to EEPROM with encryption
   savePinToEEPROM();
   
-  // Confirm the PIN is set
-  
-  
-  // Print confirmation
   Serial.println("PIN has been reset to 1111");
 }
 #ifndef UNIT_TEST
@@ -40,7 +34,6 @@ void resetPinTo1111() {
 void setup() {
   initHardware();
   
-  // Load PIN from EEPROM
   for (int i = 0; i < 4; i++) {
     pin[i] = EEPROM.read(i);
     decryptPin(&pin[i]);
