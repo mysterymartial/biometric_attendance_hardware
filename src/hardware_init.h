@@ -68,36 +68,36 @@ bool reconnectWiFiIfNeeded();
 bool reconnectMQTTIfNeeded();
 
 inline bool isTimeAllowedForAttendanceWithTime(DateTime now) {
-  // Serial.print("Current time: ");
-  // Serial.print(now.year());
-  // Serial.print("-");
-  // Serial.print(now.month());
-  // Serial.print("-");
-  // Serial.print(now.day());
-  // Serial.print(" ");
-  // Serial.print(now.hour());
-  // Serial.print(":");
-  // Serial.print(now.minute());
-  // Serial.print(":");
-  // Serial.print(now.second());
-  // Serial.print(" Day of week: ");
-  // Serial.println(now.dayOfTheWeek());
+  Serial.print("Current time: ");
+  Serial.print(now.year());
+  Serial.print("-");
+  Serial.print(now.month());
+  Serial.print("-");
+  Serial.print(now.day());
+  Serial.print(" ");
+  Serial.print(now.hour());
+  Serial.print(":");
+  Serial.print(now.minute());
+  Serial.print(":");
+  Serial.print(now.second());
+  Serial.print(" Day of week: ");
+  Serial.println(now.dayOfTheWeek());
   
-  // uint8_t dayOfWeek = now.dayOfTheWeek();
-  // if (dayOfWeek == 0) dayOfWeek = 7; 
+  uint8_t dayOfWeek = now.dayOfTheWeek();
+  if (dayOfWeek == 0) dayOfWeek = 7; 
   
-  // if (dayOfWeek > 5) {
-  //   Serial.println("Weekend - attendance not allowed");
-  //   return false;
-  // }
+  if (dayOfWeek > 5) {
+    Serial.println("Weekend - attendance not allowed");
+    return false;
+  }
   
-  // int hour = now.hour();
-  // if (hour < 7 || hour >= 17) {
-  //   Serial.println("Outside work hours - attendance not allowed");
-  //   return false;
-  // }
+  int hour = now.hour();
+  if (hour < 7 || hour >= 17) {
+    Serial.println("Outside work hours - attendance not allowed");
+    return false;
+  }
   
-  // Serial.println("Attendance allowed at this time");
+  Serial.println("Attendance allowed at this time");
   return true;
 }
 
