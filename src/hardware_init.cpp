@@ -407,6 +407,7 @@ void initWiFiAndMQTT() {
     lcd.setCursor(14, 1);
     dotCount = (dotCount + 1) % 4;
     lcd.print("    "); 
+    lcd.print("connecting to wifi");
     lcd.setCursor(14, 1);
     for (int i = 0; i < dotCount; i++) {
       lcd.print(".");
