@@ -53,6 +53,9 @@ void setup() {
 }
 
 void loop() {
+  if(wifiConnected){
+    maintainMQTTConnection();
+  }
   if (!wifiConnected) {
     diagnosisWiFi();
   }
@@ -340,84 +343,114 @@ void handleMenu() {
       }
     }
     else if (choice == '2') {
-      Serial.println("Selected Attendance (Option 2)");
-      if (!isTimeAllowedForAttendance()) {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Can't mark attendance");
-        lcd.setCursor(0, 1);
-        lcd.print("by this time");
-        delay(2000);
-        waitForBackKey();
-        choice = displayMainMenu();
-        continue;
-      }
+  Serial.println("Selected Attendance (Option 2)");
+  if (!isTimeAllowedForAttendance()) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Can't mark attendance");
+    lcd.setCursor(0, 1);
+    lcd.print("by this time");
+    delay(2000);
+    waitForBackKey();
+    choice = displayMainMenu();
+    continue;
+  }
       
-      if (!mqttConnected) {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Connecting for");
-        lcd.setCursor(0, 1);
-        lcd.print("attendance...");
-        delay(1000);
-        
-        reconnectMQTTIfNeeded();
-        
-        if (!mqttConnected) {
-          lcd.clear();
-          lcd.setCursor(0, 0);
-          lcd.print("No connection!");
-          lcd.setCursor(0, 1);
-          lcd.print("Try again later");
-          delay(2000);
-          waitForBackKey();
-          choice = displayMainMenu();
-          continue;
-        }
-      }
-      
+  if (!mqttConnected) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Connecting for");
+    lcd.setCursor(0, 1);
+    lcd.print("attendance...");
+    delay(1000);
+            
+    reconnectMQTTIfNeeded();
+            
+    if (!mqttConnected) {
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Place Finger");
+      lcd.print("No connection!");
       lcd.setCursor(0, 1);
-      lcd.print("for Attendance");
-      
-      fpId = getFingerprintString(false);
-      
-      if (fpId.length() > 0) {
-        publishAttendanceData(fpId.c_str(), "present");
-        
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("ID: " + fpId.substring(4)); 
-        lcd.setCursor(0, 1);
-        lcd.print("7:Exit/New Finger");
-        unsigned long startTime = millis();
-        bool exitEarly = false;
-    
-        while (millis() - startTime < 120000 && !exitEarly) {
-          char key = getKey();
-          if (key == '7') {
-            exitEarly = true;
-          }
-          
-          uint8_t p = getFingerprintID();
-          if (p == FINGERPRINT_OK) {
-            exitEarly = true;
-          }
-          
-          delay(50);
-        }
-      } else {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("No Fingerprint");
-        lcd.setCursor(0, 1);
-        lcd.print("Detected!");
-        delay(2000);
-        waitForBackKey();
-      }
+      lcd.print("Try again later");
+      delay(2000);
+      waitForBackKey();
+      choice = displayMainMenu();
+      continue;
     }
+  }
+        
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Place Finger");
+  lcd.setCursor(0, 1);
+  lcd.print("for Attendance");
+  
+  unsigned long fingerWaitStart = millis();
+  bool fingerDetected = false;
+  
+  while (millis() - fingerWaitStart < 10000 && !fingerDetected) {
+    fpId = getFingerprintString(false);
+    if (fpId.length() > 0) {
+      fingerDetected = true;
+      break;
+    }
+    
+    char key = getKey();
+    if (key == '7') {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Cancelled");
+      delay(1000);
+      choice = displayMainMenu();
+      continue;
+    }
+    
+    delay(100);
+  }
+        
+  if (fingerDetected) {
+    publishAttendanceData(fpId.c_str(), "present");
+            
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("ID: " "FPID" + fpId.substring(4));
+    lcd.setCursor(0, 1);
+    lcd.print("Attendance marked!");
+    delay(2000);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("ID: " "FPID" + fpId.substring(4));
+    lcd.setCursor(0, 1);
+    lcd.print("7:Exit/New Finger");
+    
+    unsigned long startTime = millis();
+    bool exitEarly = false;
+        
+    while (millis() - startTime < 120000 && !exitEarly) {
+      char key = getKey();
+      if (key == '7') {
+        exitEarly = true;
+      }
+                
+      uint8_t p = getFingerprintID();
+      if (p == FINGERPRINT_OK) {
+        exitEarly = true;
+      }
+                
+      delay(50);
+    }
+  } else {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("No Fingerprint");
+    lcd.setCursor(0, 1);
+    lcd.print("Detected! Try again");
+    delay(2000);
+    waitForBackKey();
+  }
+}
+
     else if (choice == '3') {
       Serial.println("Selected Reset PIN (Option 3)");
       

@@ -8,7 +8,6 @@ WiFiClientSecure wifiClient;
 PubSubClient client(wifiClient);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "ng.pool.ntp.org", 3600, 60000);
-
 char keys[4][4] = {
   {'1', '2', '3', 'A'},
   {'4', '5', '6', 'B'},
@@ -63,14 +62,37 @@ void initLCD() {
 
 bool fetchCurrentTime(DateTime &dt) {
   timeClient.begin();
-  if (!timeClient.update()) {
-    Serial.println("Failed to fetch time from NTP server!");
+  bool success = false;
+  for (int i = 0; i < 5; i++) {
+    if (timeClient.update()) {
+      success = true;
+      break;
+    }
+    Serial.println("Retrying NTP update...");
+    delay(1000);
+  }
+  
+  if (!success) {
+    Serial.println("Failed to fetch time from NTP server after multiple attempts!");
     return false;
   }
+  
   unsigned long epochTime = timeClient.getEpochTime();
+  
+  Serial.print("NTP time received: ");
+  Serial.print(timeClient.getFormattedTime());
+  Serial.print(" (Epoch: ");
+  Serial.print(epochTime);
+  Serial.println(")");
+  
   dt = DateTime(epochTime);
+  if (dt.year() < 2023 || dt.year() > 2024) {
+    Serial.println("Warning: NTP returned an unusual year: " + String(dt.year()));
+  }
+  
   return true;
 }
+
 
 void initRTC() {
   if (!rtc.begin()) {
@@ -80,30 +102,50 @@ void initRTC() {
     lcd.print("RTC Failed!");
     while (1);
   }
+  
   uint8_t firstBootFlag = EEPROM.read(FIRST_BOOT_FLAG_ADDR);
-  if (firstBootFlag != 1) {
-    DateTime dt;
-    if (fetchCurrentTime(dt)) {
-      rtc.adjust(dt);
+  
+  DateTime dt;
+  if (fetchCurrentTime(dt)) {
+    rtc.adjust(dt);
+    
+    if (firstBootFlag != 1) {
       EEPROM.write(FIRST_BOOT_FLAG_ADDR, 1);
       EEPROM.commit();
-      Serial.println("RTC set to current time via NTP");
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("RTC Sync Success!");
-      delay(1000);
-    } else {
-      rtc.adjust(DateTime(2025, 1, 1, 0, 0, 0));  
+    }
+    
+    Serial.println("RTC set to current time via NTP");
+    Serial.print("Current time set to: ");
+    Serial.print(dt.year());
+    Serial.print("-");
+    Serial.print(dt.month());
+    Serial.print("-");
+    Serial.print(dt.day());
+    Serial.print(" ");
+    Serial.print(dt.hour());
+    Serial.print(":");
+    Serial.print(dt.minute());
+    Serial.print(":");
+    Serial.println(dt.second());
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("RTC Sync Success!");
+    delay(1000);
+  } else {
+    if (firstBootFlag != 1) {
+  rtc.adjust(DateTime(2023, 1, 1, 0, 0, 0)); 
       Serial.println("Failed to fetch NTP time, using default");
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("RTC Default Set!");
       delay(1000);
+    } else {
+      Serial.println("Failed to update RTC from NTP, keeping current time");
     }
-  } else {
-    Serial.println("RTC already initialized, preserving time");
   }
 }
+
 
 void initFingerprint() {
   mySerial.begin(57600, SERIAL_8N1, RXD2, TXD2);
@@ -301,25 +343,62 @@ char getKey() {
   return '\0';
 }
 
+
 void initWiFiAndMQTT() {
   WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
   delay(1000);
+  
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   
+  Serial.println("\n=== WiFi Connection Attempt ===");
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(WIFI_SSID);
+  Serial.print("With password length: ");
+  Serial.println(strlen(WIFI_PASSWORD));
   
-
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int numNetworks = WiFi.scanNetworks();
+  bool networkFound = false;
+  int networkSignal = 0;
+  
+  for (int i = 0; i < numNetworks; i++) {
+    if (String(WiFi.SSID(i)) == String(WIFI_SSID)) {
+      networkFound = true;
+      networkSignal = WiFi.RSSI(i);
+      Serial.print("Target network found with signal strength: ");
+      Serial.print(networkSignal);
+      Serial.println(" dBm");
+      break;
+    }
+  }
+  
+  if (!networkFound) {
+    Serial.println("WARNING: Target network not found in scan results!");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Network not");
+    lcd.setCursor(0, 1);
+    lcd.print("found!");
+    delay(2000);
+  }
+  
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Connecting to");
   lcd.setCursor(0, 1);
-  lcd.print("WiFi...");
+  lcd.print("WiFi (1/3)...");
+  
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  
+  WiFi.disconnect();
+  delay(500);
+  
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   
   unsigned long startTime = millis();
-  const unsigned long timeout = 20000; // Increased timeout to 20 seconds
+  const unsigned long timeout = 10000; 
   int dotCount = 0;
   
   while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
@@ -327,7 +406,126 @@ void initWiFiAndMQTT() {
     Serial.print(".");
     lcd.setCursor(14, 1);
     dotCount = (dotCount + 1) % 4;
-    lcd.print("    "); // Clear dots
+    lcd.print("    "); 
+    lcd.setCursor(14, 1);
+    for (int i = 0; i < dotCount; i++) {
+      lcd.print(".");
+    }
+  }
+  
+
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    Serial.println("\nConnected to WiFi using Method 1");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi Connected!");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.localIP().toString().substring(0, 16));
+    delay(1000);
+    
+    testDNSResolution();
+    
+    setupMQTT();
+    return;
+  }
+  
+  if (networkFound) {
+    Serial.println("\nTrying Method 2: Connection with specific parameters");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Connecting to");
+    lcd.setCursor(0, 1);
+    lcd.print("WiFi (2/3)...");
+    
+    WiFi.disconnect(true);
+    delay(1000);
+    
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    
+    startTime = millis();
+    const unsigned long timeout2 = 15000; 
+    
+    while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout2) {
+      delay(500);
+      Serial.print("+");
+      
+      if ((millis() - startTime) % 3000 < 100) {
+        Serial.print(" [Status: ");
+        Serial.print(WiFi.status());
+        Serial.println("]");
+      }
+      
+      lcd.setCursor(14, 1);
+      dotCount = (dotCount + 1) % 4;
+      lcd.print("    ");
+      lcd.setCursor(14, 1);
+      for (int i = 0; i < dotCount; i++) {
+        lcd.print(".");
+      }
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiConnected = true;
+      Serial.println("\nConnected to WiFi using Method 2");
+      Serial.print("IP Address: ");
+      Serial.println(WiFi.localIP());
+      
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("WiFi Connected!");
+      lcd.setCursor(0, 1);
+      lcd.print(WiFi.localIP().toString().substring(0, 16));
+      delay(1000);
+      
+      testDNSResolution();
+      
+      setupMQTT();
+      return;
+    }
+  }
+  
+  Serial.println("\nTrying Method 3: Connection with static IP");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting to");
+  lcd.setCursor(0, 1);
+  lcd.print("WiFi (3/3)...");
+  
+  WiFi.disconnect(true);
+  delay(1000);
+  
+  IPAddress staticIP(192, 168, 1, 200);  
+  IPAddress gateway(192, 168, 1, 1);     
+  IPAddress subnet(255, 255, 255, 0);
+  IPAddress dns1(8, 8, 8, 8);            
+  IPAddress dns2(8, 8, 4, 4);
+  
+  if (!WiFi.config(staticIP, gateway, subnet, dns1, dns2)) {
+    Serial.println("Static IP configuration failed");
+  }
+  
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  startTime = millis();
+  const unsigned long timeout3 = 20000; 
+  
+  while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout3) {
+    delay(500);
+    Serial.print("*");
+    
+    if ((millis() - startTime) % 3000 < 100) {
+      Serial.print(" [Status: ");
+      Serial.print(WiFi.status());
+      Serial.println("]");
+    }
+    
+    lcd.setCursor(14, 1);
+    dotCount = (dotCount + 1) % 4;
+    lcd.print("    ");
     lcd.setCursor(14, 1);
     for (int i = 0; i < dotCount; i++) {
       lcd.print(".");
@@ -336,138 +534,138 @@ void initWiFiAndMQTT() {
   
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
-    Serial.println("Connected to WiFi");
+    Serial.println("\nConnected to WiFi using Method 3 (Static IP)");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
+    
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("WiFi Connected!");
     lcd.setCursor(0, 1);
-    lcd.print("IP: " + WiFi.localIP().toString().substring(0, 12));
+    lcd.print(WiFi.localIP().toString().substring(0, 16));
     delay(1000);
     
-    wifiClient.setInsecure();
-    client.setServer(MQTT_BROKER, MQTT_PORT);
-    if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
-      mqttConnected = true;
-      Serial.println("Connected to MQTT");
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("MQTT Connected!");
-      delay(1000);
-    } else {
-      mqttConnected = false;
-      Serial.println("MQTT connection failed! State: " + String(client.state()));
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("MQTT Failed!");
-      lcd.setCursor(0, 1);
-      lcd.print("State: " + String(client.state()));
-      delay(1000);
-    }
-  } else {
-    wifiConnected = false;
-    connectionAttempts++;
-    Serial.println("WiFi connection failed! Status: " + String(WiFi.status()));
-    Serial.println("Trying alternative connection method...");
+    testDNSResolution();
     
-    // Try alternative connection method
-    WiFi.disconnect(true);
-    delay(1000);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Retry WiFi...");
-    lcd.setCursor(0, 1);
-    lcd.print("Attempt " + String(connectionAttempts) + "/3");
-    
-    startTime = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startTime < timeout) {
-      delay(500);
-      Serial.print("*");
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-      wifiConnected = true;
-      Serial.println("Connected to WiFi (2nd attempt)");
-      Serial.print("IP Address: ");
-      Serial.println(WiFi.localIP());
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("WiFi Connected!");
-      delay(1000);
+    setupMQTT();
+    return;
+  }
+  
+  wifiConnected = false;
+  Serial.println("\n=== All WiFi connection methods failed ===");
+  Serial.println("Detailed diagnosis:");
+  diagnosisWiFi();
+  
+  for (int i = 0; i < numNetworks; i++) {
+    String ssid = WiFi.SSID(i);
+    if (ssid == "Semicolon-Village" || ssid == "Semicolon-Village 2g") {
+      Serial.print("\nTrying alternative network: ");
+      Serial.println(ssid);
       
-      // Try MQTT connection
-      wifiClient.setInsecure();
-      client.setServer(MQTT_BROKER, MQTT_PORT);
-      if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
-        mqttConnected = true;
-      }
-    } else if (connectionAttempts < 3) {
-      Serial.println("Retrying WiFi connection...");
-      initWiFiAndMQTT();
-    } else {
-      Serial.println("Max connection attempts reached. Continuing without connectivity.");
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Continuing in");
+      lcd.print("Trying alt net:");
       lcd.setCursor(0, 1);
-      lcd.print("offline mode...");
-      delay(2000);
+      lcd.print(ssid.substring(0, 16));
+      
+      WiFi.disconnect(true);
+      delay(1000);
+      WiFi.begin(ssid.c_str(), ""); 
+      
+      startTime = millis();
+      const unsigned long altTimeout = 10000;
+      
+      while (WiFi.status() != WL_CONNECTED && millis() - startTime < altTimeout) {
+        delay(500);
+        Serial.print("~");
+      }
+      
+      if (WiFi.status() == WL_CONNECTED) {
+        wifiConnected = true;
+        Serial.println("\nConnected to alternative network");
+        Serial.print("IP Address: ");
+        Serial.println(WiFi.localIP());
+        
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Alt WiFi OK!");
+        lcd.setCursor(0, 1);
+        lcd.print(WiFi.localIP().toString().substring(0, 16));
+        delay(1000);
+        
+        testDNSResolution();
+        
+        setupMQTT();
+        return;
+      }
     }
+  }
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Continuing in");
+  lcd.setCursor(0, 1);
+  lcd.print("offline mode...");
+  delay(2000);
+  
+  Serial.println("\nContinuing in offline mode");
+}
+
+void testDNSResolution() {
+  Serial.println("Testing DNS resolution...");
+  
+  IPAddress result;
+  if (WiFi.hostByName("www.google.com", result)) {
+    Serial.print("DNS resolution for google.com successful: ");
+    Serial.println(result.toString());
+  } else {
+    Serial.println("DNS resolution for google.com failed!");
+  }
+  
+  IPAddress mqttIP;
+  String brokerHost = MQTT_BROKER;
+  brokerHost.replace("ssl://", "");
+  
+  Serial.print("Attempting to resolve MQTT broker: ");
+  Serial.println(brokerHost);
+  
+  if (WiFi.hostByName(brokerHost.c_str(), mqttIP)) {
+    Serial.print("MQTT broker resolved to: ");
+    Serial.println(mqttIP.toString());
+  } else {
+    Serial.println("Failed to resolve MQTT broker hostname!");
+    Serial.println("Will try direct IP connection if available");
   }
 }
+
 void diagnosisWiFi() {
-  Serial.println("\n--- WiFi Diagnosis ---");
-  Serial.print("WiFi Status: ");
+  Serial.println("--- WiFi Diagnosis ---");
   
-  switch(WiFi.status()) {
-    case WL_CONNECTED:
-      Serial.println("CONNECTED");
-      Serial.print("Connected to: ");
-      Serial.println(WiFi.SSID());
-      Serial.print("IP Address: ");
-      Serial.println(WiFi.localIP());
-      Serial.print("RSSI: ");
-      Serial.println(WiFi.RSSI());
-      break;
-    case WL_NO_SHIELD:
-      Serial.println("NO SHIELD");
-      break;
-    case WL_IDLE_STATUS:
-      Serial.println("IDLE");
-      break;
-    case WL_NO_SSID_AVAIL:
-      Serial.println("NO SSID AVAILABLE");
-      break;
-    case WL_SCAN_COMPLETED:
-      Serial.println("SCAN COMPLETED");
-      break;
-    case WL_CONNECT_FAILED:
-      Serial.println("CONNECTION FAILED");
-      break;
-    case WL_CONNECTION_LOST:
-      Serial.println("CONNECTION LOST");
-      break;
-    case WL_DISCONNECTED:
-      Serial.println("DISCONNECTED");
-      break;
-    default:
-      Serial.println("UNKNOWN");
+  Serial.print("WiFi Status: ");
+  switch (WiFi.status()) {
+    case WL_CONNECTED: Serial.println("CONNECTED"); break;
+    case WL_NO_SHIELD: Serial.println("NO SHIELD"); break;
+    case WL_IDLE_STATUS: Serial.println("IDLE"); break;
+    case WL_NO_SSID_AVAIL: Serial.println("NO SSID AVAILABLE"); break;
+    case WL_SCAN_COMPLETED: Serial.println("SCAN COMPLETED"); break;
+    case WL_CONNECT_FAILED: Serial.println("CONNECTION FAILED"); break;
+    case WL_CONNECTION_LOST: Serial.println("CONNECTION LOST"); break;
+    case WL_DISCONNECTED: Serial.println("DISCONNECTED"); break;
+    default: Serial.println("UNKNOWN");
   }
   
-  Serial.print("Attempting to scan networks...");
+  
+  Serial.println("Attempting to scan networks...");
   int numNetworks = WiFi.scanNetworks();
   Serial.println("done");
   
   if (numNetworks == 0) {
-    Serial.println("No networks found");
+    Serial.println("No networks found!");
   } else {
     Serial.print(numNetworks);
     Serial.println(" networks found:");
-    for (int i = 0; i < numNetworks; ++i) {
-      // Print network details
+    
+    for (int i = 0; i < numNetworks; i++) {
       Serial.print(i + 1);
       Serial.print(": ");
       Serial.print(WiFi.SSID(i));
@@ -475,56 +673,217 @@ void diagnosisWiFi() {
       Serial.print(WiFi.RSSI(i));
       Serial.print(" dBm) ");
       
-      // More detailed encryption type information
-      String encryptionType = "";
-      #ifdef ESP8266
-        switch(WiFi.encryptionType(i)) {
-          case ENC_TYPE_WEP: encryptionType = "WEP"; break;
-          case ENC_TYPE_TKIP: encryptionType = "WPA/TKIP"; break;
-          case ENC_TYPE_CCMP: encryptionType = "WPA2/CCMP"; break;
-          case ENC_TYPE_NONE: encryptionType = "Open"; break;
-          case ENC_TYPE_AUTO: encryptionType = "Auto"; break;
-          default: encryptionType = "Unknown"; break;
-        }
-      #else // For ESP32
-        if (WiFi.encryptionType(i) == WIFI_AUTH_OPEN)
-          encryptionType = "Open";
-        else if (WiFi.encryptionType(i) == WIFI_AUTH_WEP)
-          encryptionType = "WEP";
-        else if (WiFi.encryptionType(i) == WIFI_AUTH_WPA_PSK)
-          encryptionType = "WPA/PSK";
-        else if (WiFi.encryptionType(i) == WIFI_AUTH_WPA2_PSK)
-          encryptionType = "WPA2/PSK";
-        else if (WiFi.encryptionType(i) == WIFI_AUTH_WPA_WPA2_PSK)
-          encryptionType = "WPA/WPA2/PSK";
-        else
-          encryptionType = "Unknown";
-      #endif
-      
-      Serial.println(encryptionType);
-      delay(10);
+      switch (WiFi.encryptionType(i)) {
+        case WIFI_AUTH_OPEN: Serial.println("Open"); break;
+        case WIFI_AUTH_WEP: Serial.println("WEP"); break;
+        case WIFI_AUTH_WPA_PSK: Serial.println("WPA/PSK"); break;
+        case WIFI_AUTH_WPA2_PSK: Serial.println("WPA2/PSK"); break;
+        case WIFI_AUTH_WPA_WPA2_PSK: Serial.println("WPA/WPA2/PSK"); break;
+        default: Serial.println("Unknown");
+      }
     }
   }
   
-  
-  bool mysteryFound = false;
+  bool foundTarget = false;
   for (int i = 0; i < numNetworks; i++) {
-    if (WiFi.SSID(i) == "Mystery") {
-      mysteryFound = true;
-      Serial.println("\nFound your 'Mystery' network:");
-      Serial.print("Signal strength: ");
-      Serial.print(WiFi.RSSI(i));
-      Serial.println(" dBm");
+    if (String(WiFi.SSID(i)) == String(WIFI_SSID)) {
+      foundTarget = true;
       break;
     }
   }
   
-  if (!mysteryFound) {
-    Serial.println("\n'Mystery' network not found in scan results!");
+  if (!foundTarget) {
+    Serial.print("'");
+    Serial.print(WIFI_SSID);
+    Serial.println("' network not found in scan results!");
+  }
+  
+  IPAddress googleIP;
+  Serial.println("Testing DNS resolution with google.com...");
+  if (WiFi.hostByName("www.google.com", googleIP)) {
+    Serial.print("DNS resolution successful: ");
+    Serial.println(googleIP.toString());
+  } else {
+    Serial.println("DNS resolution failed!");
   }
   
   Serial.println("------------------------");
 }
+
+
+void maintainMQTTConnection() {
+  if (!wifiConnected) {
+  
+    if (WiFi.status() != WL_CONNECTED) {
+      reconnectWiFiIfNeeded();
+    }
+    return;
+  }
+
+  if (!client.connected()) {
+    Serial.println("MQTT connection lost, attempting to reconnect...");
+    String brokerHost = MQTT_BROKER;
+    brokerHost.replace("ssl://", "");
+    client.setServer(brokerHost.c_str(), MQTT_PORT);
+    
+    if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+      mqttConnected = true;
+      Serial.println("Reconnected to MQTT using hostname");
+      client.subscribe("attendance/commands");
+    } else {
+      tryMQTTFallbackIPs();
+    }
+  }
+
+  if (mqttConnected) {
+    client.loop();
+  }
+}
+
+
+void setupMQTT() {
+  if (!wifiConnected) {
+    Serial.println("Cannot set up MQTT: WiFi not connected");
+    return;
+  }
+  wifiClient.setInsecure(); 
+  
+  wifiClient.setTimeout(15000); 
+
+  String brokerHost = MQTT_BROKER;
+  brokerHost.replace("ssl://", "");
+  
+  Serial.print("Connecting to MQTT broker: ");
+  Serial.println(brokerHost);
+  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting MQTT");
+  
+  client.setServer(brokerHost.c_str(), MQTT_PORT);
+  
+  Serial.println("Attempting MQTT connection...");
+  if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+    mqttConnected = true;
+    Serial.println("Connected to MQTT broker!");
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("MQTT Connected!");
+    delay(1000);
+    client.subscribe("attendance/commands");
+    Serial.println("Subscribed to MQTT topics");
+  } else {
+    Serial.print("MQTT connection failed, rc=");
+    Serial.println(client.state());
+    tryMQTTFallbackIPs();
+  }
+}
+
+void tryMQTTFallbackIPs() {
+  
+  const char* MQTT_FALLBACK_IPS[] = {
+    "46.137.47.218",
+    "54.73.92.158",
+    "52.31.149.80"
+  };
+  
+  bool connected = false;
+  for (int i = 0; i < 3 && !connected; i++) {
+    Serial.print("Trying direct IP connection to MQTT broker: ");
+    Serial.println(MQTT_FALLBACK_IPS[i]);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("MQTT IP try ");
+    lcd.print(i+1);
+    lcd.setCursor(0, 1);
+    lcd.print(MQTT_FALLBACK_IPS[i]);
+    
+    client.setServer(MQTT_FALLBACK_IPS[i], MQTT_PORT);
+    if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+      connected = true;
+      mqttConnected = true;
+      Serial.println("Connected to MQTT using direct IP!");
+      
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("MQTT Connected!");
+      lcd.setCursor(0, 1);
+      lcd.print("via IP ");
+      lcd.print(i+1);
+      delay(1000);
+      
+      client.subscribe("attendance/commands");
+      Serial.println("Subscribed to MQTT topics");
+      break;
+    } else {
+      Serial.print("Failed with IP ");
+      Serial.print(MQTT_FALLBACK_IPS[i]);
+      Serial.print(", rc=");
+      Serial.println(client.state());
+      delay(1000);
+    }
+  }
+  
+  if (!connected) {
+    Serial.println("All MQTT connection attempts failed");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("MQTT Failed!");
+    lcd.setCursor(0, 1);
+    lcd.print("Check credentials");
+    delay(1000);
+  }
+}
+
+bool publishToMQTT(const char* topic, const char* payload) {
+  if (!mqttConnected) {
+    Serial.println("Cannot publish: MQTT not connected");
+    return false;
+  }
+  
+  bool success = client.publish(topic, payload);
+  if (success) {
+    Serial.print("Published to ");
+    Serial.print(topic);
+    Serial.print(": ");
+    Serial.println(payload);
+  } else {
+    Serial.print("Failed to publish to ");
+    Serial.println(topic);
+  }
+  
+  return success;
+}
+
+
+bool reconnectMQTT() {
+  if (mqttConnected && client.connected()) {
+    return true; 
+  }
+  
+  if (!wifiConnected) {
+    Serial.println("Cannot reconnect to MQTT: WiFi not connected");
+    return false;
+  }
+  
+  Serial.println("Attempting to reconnect to MQTT...");
+  
+  if (client.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+    mqttConnected = true;
+    Serial.println("Reconnected to MQTT broker");
+    
+    client.subscribe("attendance/commands");
+    return true;
+  } else {
+    Serial.print("Failed to reconnect to MQTT, rc=");
+    Serial.println(client.state());
+    mqttConnected = false;
+    return false;
+  }
+}
+
 
 bool reconnectWiFiIfNeeded() {
   if (WiFi.status() == WL_CONNECTED) {
